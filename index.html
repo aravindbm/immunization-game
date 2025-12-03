@@ -237,12 +237,28 @@
                 updateScore(-5);
             }
         }
+// --- UPDATED FINISH & SUBMIT LOGIC ---
 
+        function submitToGoogle() {
+        // 1. YOUR GOOGLE FORM URL (PASTE YOURS HERE)
+        // Keep the part BEFORE the '?'
+        const baseURL = "https://docs.google.com/forms/d/e/1FAIpQLSfgBDH5DXNNADQwQQZlfMiatxkFLLY4iveP5jSHMl1z_1SWBQ/viewform";
+
+        // 2. YOUR ENTRY IDs (REPLACE WITH YOUR NUMBERS)
+        const entryIdScore = "entry.1104804047";    // Replace with YOUR Score ID
+        const entryIdScenario = "entry.1366785076"; // Replace with YOUR Scenario ID
+
+        // 3. Construct the final link
+        // We use encodeURIComponent to handle spaces and special characters safely
+        const finalURL = `${baseURL}?usp=pp_url&${entryIdScore}=${score}&${entryIdScenario}=${encodeURIComponent(currentPatient.label)}`;
+
+        // 4. Open the form in a new tab
+        window.open(finalURL, '_blank');
+    }
         function finishGame() {
             document.getElementById('final-score').innerText = score;
             goToScreen('screen-result');
         }
-
     </script>
 </head>
 <body onload="initGame()">
@@ -358,14 +374,19 @@
         <div id="waste-feedback" class="feedback"></div>
     </div>
 
-    <div id="screen-result" class="screen" style="text-align: center;">
+<div id="screen-result" class="screen" style="text-align: center;">
         <h1>Simulation Complete</h1>
         <h2>Total Score: <span id="final-score">0</span></h2>
         <p>You have completed the rotation for this patient.</p>
-        <button class="btn btn-blue" onclick="initGame()">🔄 Treat Next Patient (Random Age)</button>
+        
+        <button class="btn" style="background-color: #8e44ad;" onclick="submitToGoogle()">📝 Submit Score to Faculty</button>
+        <br><br>
+        
+        <button class="btn btn-blue" onclick="initGame()">🔄 Call in Next Patient (Random Age)</button>
     </div>
 
 </div>
 
 </body>
+
 </html>
