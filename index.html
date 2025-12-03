@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comprehensive Immunization Simulator</title>
+    <style>
+        /* BASE STYLES */
+        body { font-family: 'Segoe UI', sans-serif; background: #eef2f3; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
+        #game-container { width: 900px; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; position: relative; min-height: 700px; display: flex; flex-direction: column; }
+        
+        /* HEADER */
+        #status-bar { background: #2c3e50; color: white; padding: 15px 20px; display: flex; justify-content: space-between; font-weight: bold; align-items: center; }
+        .patient-tag { background: #e67e22; padding: 2px 8px; border-radius: 4px; font-size: 0.9em; margin-left: 10px; }
+
+        /* SCREENS */
+        .screen { display: none; padding: 30px; flex-grow: 1; animation: fadeIn 0.4s; overflow-y: auto; }
+        .active { display: block !important; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* UI ELEMENTS */
+        h2 { color: #007bff; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; margin-top: 0; }
+        .btn { background: #28a745; color: white; border: none; padding: 12px 25px; cursor: pointer; font-size: 16px; border-radius: 6px; margin-top: 20px; transition: 0.2s; }
+        .btn:hover { background: #218838; transform: scale(1.02); }
+        .btn-blue { background: #007bff; }
+        .btn-blue:hover { background: #0056b3; }
+        .btn-red { background: #dc3545; }
+        .btn-red:hover { background: #c82333; }
+
+        /* VVM STYLES */
+        .vial-container { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; margin: 20px 0; }
+        .vial-card { border: 1px solid #ccc; padding: 15px; border-radius: 8px; text-align: center; width: 140px; cursor: pointer; transition: 0.2s; background: #f9f9f9; }
+        .vial-card:hover { transform: translateY(-5px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        .vial-card.selected { border: 3px solid #007bff; background: #e7f1ff; }
+        
+        /* CSS Drawing of VVM */
+        .vvm-circle { width: 60px; height: 60px; border-radius: 50%; background: #5d3f6a; margin: 10px auto; position: relative; display: flex; justify-content: center; align-items: center; }
+        .vvm-square { width: 30px; height: 30px; background: white; }
+        /* VVM Stages */
+        .stage1 .vvm-square { background: white; } 
+        .stage2 .vvm-square { background: #dcdcdc; } /* Light Grey */
+        .stage3 .vvm-square { background: #5d3f6a; } /* Matches Circle */
+        .stage4 .vvm-square { background: #301934; } /* Darker than circle */
+
+        /* SCHEDULE SHELF */
+        .shelf { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px; }
+        .vaccine-btn { background: #fff; border: 1px solid #aaa; padding: 8px 12px; border-radius: 20px; cursor: pointer; user-select: none; }
+        .vaccine-btn.picked { background: #007bff; color: white; border-color: #0056b3; }
+
+        /* OVP SCENARIO */
+        .ovp-box { background: #fff3cd; border: 1px solid #ffeeba; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+
+        /* FEEDBACK */
+        .feedback { margin-top: 20px; padding: 15px; border-radius: 5px; font-weight: bold; display: none; }
+        .feedback.error { background: #f8d7da; color: #721c24; display: block; }
+        .feedback.success { background: #d4edda; color: #155724; display: block; }
+
+        /* WASTE */
+        .bin-row { display: flex; gap: 15px; justify-content: center; margin-top: 20px; }
+        .bin { width: 80px; height: 100px; color: white; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 10px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 0.8em; text-align: center; }
+        .bin:hover { opacity: 0.8; }
+    </style>
+
+    <script>
+        // --- GAME DATA & STATE ---
+        let score = 0;
+        let currentPatient = {};
+        
+        // Scenario Database
+        const PATIENT_PROFILES = [
+            { label: "Home Delivery / Newborn", age: "24 Hours", id: "birth", correct: ["BCG", "OPV-0", "HepB-0"] },
+            { label: "6 Week Visit", age: "6 Weeks", id: "6wk", correct: ["OPV-1", "Pentavalent-1", "Rotavirus-1", "fIPV-1", "PCV-1"] },
+            { label: "10 Week Visit", age: "10 Weeks", id: "10wk", correct: ["OPV-2", "Pentavalent-2", "Rotavirus-2"] },
+            { label: "14 Week Visit", age: "14 Weeks", id: "14wk", correct: ["OPV-3", "Pentavalent-3", "Rotavirus-3", "fIPV-2", "PCV-2"] },
+            { label: "9 Month Visit", age: "9 Months Completed", id: "9mo", correct: ["MR-1", "JE-1", "PCV-Booster", "Vitamin A (1ml)"] }, // Assuming JE endemic area for generic training
+            { label: "16-24 Month Visit", age: "18 Months", id: "16mo", correct: ["MR-2", "JE-2", "DPT-Booster-1", "OPV-Booster", "Vitamin A (2ml)"] },
+            { label: "School Entry", age: "5 Years", id: "5yr", correct: ["DPT-Booster-2"] }
+        ];
+
+        let selectedVaccines = [];
+        let vvmSelections = [];
+        
+        // --- CORE FUNCTIONS ---
+
+        function initGame() {
+            score = 0;
+            selectedVaccines = [];
+            vvmSelections = [];
+            
+            // 1. Pick a Random Patient
+            const randomIndex = Math.floor(Math.random() * PATIENT_PROFILES.length);
+            currentPatient = PATIENT_PROFILES[randomIndex];
+            
+            // 2. Update UI
+            document.getElementById('patient-display').innerText = `${currentPatient.label} (${currentPatient.age})`;
+            document.getElementById('score-display').innerText = "0";
+            
+            goToScreen('screen-vvm');
+        }
+
+        function goToScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+        }
+
+        function updateScore(points) {
+            score += points;
+            document.getElementById('score-display').innerText = score;
+        }
+
+        // --- STATION 1: VVM ---
+        function toggleVVM(id, element) {
+            if(vvmSelections.includes(id)) {
+                vvmSelections = vvmSelections.filter(x => x !== id);
+                element.classList.remove('selected');
+            } else {
+                vvmSelections.push(id);
+                element.classList.add('selected');
+            }
+        }
+
+        function submitVVM() {
+            // Correct Logic: Stage 1 and 2 are usable. 3 and 4 are not.
+            const correctSet = ['vvm1', 'vvm2'];
+            
+            // Check if user selected ONLY the correct ones
+            const isCorrect = vvmSelections.length === correctSet.length && 
+                              vvmSelections.every(val => correctSet.includes(val));
+
+            const fb = document.getElementById('vvm-feedback');
+            if (isCorrect) {
+                fb.className = 'feedback success';
+                fb.innerHTML = "✅ Correct! Stage 1 & 2 are usable. Stage 3 & 4 must be discarded.";
+                updateScore(10);
+                document.getElementById('btn-vvm-submit').style.display = 'none';
+                document.getElementById('btn-vvm-next').style.display = 'inline-block';
+            } else {
+                fb.className = 'feedback error';
+                fb.innerHTML = "❌ Incorrect. Remember: Use if the square is lighter than the circle. Discard if it matches or is darker.";
+                updateScore(-5);
+            }
+        }
+
+        // --- STATION 2: OVP (Open Vial Policy) ---
+        // We will randomize the OVP scenario too
+        let ovpIsUsable = false;
+        
+        function setupOVP() {
+            const scenarios = [
+                { text: "You find a 'Pentavalent' vial opened 15 days ago. Kept in cold chain. VVM is good.", usable: true },
+                { text: "You find a 'Measles' vial (Reconstituted) opened 6 hours ago. Kept in cold chain.", usable: false },
+                { text: "You find an 'IPV' vial opened 25 days ago. VVM is good.", usable: true },
+                { text: "You find a 'BCG' vial opened yesterday. There is still vaccine left.", usable: false }
+            ];
+            const sc = scenarios[Math.floor(Math.random() * scenarios.length)];
+            document.getElementById('ovp-text').innerText = sc.text;
+            ovpIsUsable = sc.usable;
+            
+            goToScreen('screen-ovp');
+        }
+
+        function answerOVP(userSaysUse) {
+            const fb = document.getElementById('ovp-feedback');
+            if (userSaysUse === ovpIsUsable) {
+                fb.className = 'feedback success';
+                fb.innerHTML = "✅ Correct decision based on Open Vial Policy guidelines.";
+                updateScore(10);
+                document.getElementById('ovp-buttons').style.display = 'none';
+                document.getElementById('btn-ovp-next').style.display = 'inline-block';
+            } else {
+                fb.className = 'feedback error';
+                fb.innerHTML = "❌ Safety Violation. Remember: Reconstituted vaccines (BCG, Measles, JE, Rotavirus) last only 4 hours. Liquid vaccines (Penta, IPV, Td) last 28 days if handled correctly.";
+                updateScore(-10);
+            }
+        }
+
+        // --- STATION 3: SCHEDULE ---
+        function toggleVaccine(vaxName, el) {
+            if (selectedVaccines.includes(vaxName)) {
+                selectedVaccines = selectedVaccines.filter(v => v !== vaxName);
+                el.classList.remove('picked');
+            } else {
+                selectedVaccines.push(vaxName);
+                el.classList.add('picked');
+            }
+        }
+
+        function checkSchedule() {
+            const fb = document.getElementById('schedule-feedback');
+            const needed = currentPatient.correct;
+            
+            // Check for missing items
+            const missing = needed.filter(x => !selectedVaccines.includes(x));
+            // Check for extra items (Wrong vaccines)
+            const extra = selectedVaccines.filter(x => !needed.includes(x));
+
+            if (missing.length === 0 && extra.length === 0) {
+                fb.className = 'feedback success';
+                fb.innerHTML = "✅ Perfect! You selected exactly the right vaccines for this age.";
+                updateScore(20);
+                document.getElementById('btn-sch-submit').style.display = 'none';
+                document.getElementById('btn-sch-next').style.display = 'inline-block';
+            } else {
+                fb.className = 'feedback error';
+                let msg = "❌ Incorrect.";
+                if(missing.length > 0) msg += " Missing: " + missing.join(", ");
+                if(extra.length > 0) msg += " Wrongly added: " + extra.join(", ");
+                fb.innerHTML = msg;
+                updateScore(-5);
+            }
+        }
+
+        // --- STATION 4: WASTE (Simplified for flow) ---
+        let isNeedleCut = false;
+        function useHubCutter() {
+            if(!isNeedleCut) {
+                isNeedleCut = true;
+                document.getElementById('waste-feedback').innerHTML = "<span style='color:green'>Needle Cut! Now dispose.</span>";
+            }
+        }
+        function dispose(color) {
+            const fb = document.getElementById('waste-feedback');
+            if(!isNeedleCut && ['red','yellow','blue'].includes(color)) {
+                fb.innerHTML = "❌ SAFETY HAZARD! Cut the needle first!";
+                fb.className = 'feedback error';
+                updateScore(-10);
+                return;
+            }
+            if(isNeedleCut && color === 'red') {
+                fb.innerHTML = "✅ Correct. Plastic hub -> Red Bin.";
+                fb.className = 'feedback success';
+                updateScore(10);
+                setTimeout(finishGame, 1500);
+            } else if (isNeedleCut) {
+                fb.innerHTML = "❌ Wrong bin.";
+                fb.className = 'feedback error';
+                updateScore(-5);
+            }
+        }
+
+        function finishGame() {
+            document.getElementById('final-score').innerText = score;
+            goToScreen('screen-result');
+        }
+
+    </script>
+</head>
+<body onload="initGame()">
+
+<div id="game-container">
+    <div id="status-bar">
+        <div>
+            🏥 Immunization Sim 
+            <span class="patient-tag" id="patient-display">Loading...</span>
+        </div>
+        <div>Score: <span id="score-display">0</span></div>
+    </div>
+
+    <div id="screen-vvm" class="screen">
+        <h2>Station 1: Vaccine Vial Monitor (VVM) Check</h2>
+        <p>Before you prepare vaccines, check the VVMs. <strong>Select ALL usable vials.</strong></p>
+        
+        <div class="vial-container">
+            <div class="vial-card" onclick="toggleVVM('vvm1', this)">
+                <div class="vvm-circle stage1"><div class="vvm-square"></div></div>
+                <strong>Stage 1</strong><br><small>Square is White</small>
+            </div>
+            <div class="vial-card" onclick="toggleVVM('vvm2', this)">
+                <div class="vvm-circle stage2"><div class="vvm-square"></div></div>
+                <strong>Stage 2</strong><br><small>Square is Grey</small>
+            </div>
+            <div class="vial-card" onclick="toggleVVM('vvm3', this)">
+                <div class="vvm-circle stage3"><div class="vvm-square"></div></div>
+                <strong>Stage 3</strong><br><small>Colors Match</small>
+            </div>
+            <div class="vial-card" onclick="toggleVVM('vvm4', this)">
+                <div class="vvm-circle stage4"><div class="vvm-square"></div></div>
+                <strong>Stage 4</strong><br><small>Square is Darker</small>
+            </div>
+        </div>
+
+        <div id="vvm-feedback" class="feedback"></div>
+        <button id="btn-vvm-submit" class="btn" onclick="submitVVM()">Check VVMs</button>
+        <button id="btn-vvm-next" class="btn btn-blue" style="display:none" onclick="setupOVP()">Next Station &rarr;</button>
+    </div>
+
+    <div id="screen-ovp" class="screen">
+        <h2>Station 2: Open Vial Policy (OVP)</h2>
+        <p>You are checking the cold chain box for previously opened vials.</p>
+        
+        <div class="ovp-box">
+            <h3>Scenario:</h3>
+            <p id="ovp-text" style="font-size: 1.2em; font-weight: bold;">Loading...</p>
+        </div>
+
+        <p>Do you use this vial or discard it?</p>
+        <div id="ovp-buttons">
+            <button class="btn btn-blue" onclick="answerOVP(true)">✅ Use It</button>
+            <button class="btn btn-red" onclick="answerOVP(false)">🗑️ Discard It</button>
+        </div>
+        
+        <div id="ovp-feedback" class="feedback"></div>
+        <button id="btn-ovp-next" class="btn btn-blue" style="display:none" onclick="goToScreen('screen-schedule')">Next Station &rarr;</button>
+    </div>
+
+    <div id="screen-schedule" class="screen">
+        <h2>Station 3: Determine the Vaccines</h2>
+        <p>The mother has brought the child to the desk. Look at the child's age in the top orange bar.</p>
+        <p><strong>Select ALL vaccines applicable for this visit:</strong></p>
+
+        <div class="shelf">
+            <button class="vaccine-btn" onclick="toggleVaccine('BCG', this)">BCG</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('OPV-0', this)">OPV-0</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('HepB-0', this)">HepB-0</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('OPV-1', this)">OPV-1</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('OPV-2', this)">OPV-2</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('OPV-3', this)">OPV-3</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('Pentavalent-1', this)">Pentavalent-1</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('Pentavalent-2', this)">Pentavalent-2</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('Pentavalent-3', this)">Pentavalent-3</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('Rotavirus-1', this)">Rotavirus-1</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('Rotavirus-2', this)">Rotavirus-2</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('Rotavirus-3', this)">Rotavirus-3</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('fIPV-1', this)">fIPV-1</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('fIPV-2', this)">fIPV-2</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('PCV-1', this)">PCV-1</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('PCV-2', this)">PCV-2</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('MR-1', this)">MR-1</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('JE-1', this)">JE-1</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('PCV-Booster', this)">PCV-Booster</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('Vitamin A (1ml)', this)">Vit A (1ml)</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('MR-2', this)">MR-2</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('JE-2', this)">JE-2</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('DPT-Booster-1', this)">DPT-Booster-1</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('OPV-Booster', this)">OPV-Booster</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('Vitamin A (2ml)', this)">Vit A (2ml)</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('DPT-Booster-2', this)">DPT-Booster-2</button>
+            <button class="vaccine-btn" onclick="toggleVaccine('TT', this)">TT</button>
+        </div>
+
+        <div id="schedule-feedback" class="feedback"></div>
+        <button id="btn-sch-submit" class="btn" onclick="checkSchedule()">Verify Schedule</button>
+        <button id="btn-sch-next" class="btn btn-blue" style="display:none" onclick="goToScreen('screen-waste')">Next Station &rarr;</button>
+    </div>
+
+    <div id="screen-waste" class="screen">
+        <h2>Station 4: Administration & Disposal</h2>
+        <p>You have administered the vaccines. You are holding a <strong>Used AD Syringe</strong>.</p>
+        <p>Dispose of it safely.</p>
+        
+        <div class="bin-row">
+            <div class="bin" style="background:#f8f9fa; color:black; border:2px solid #ccc" onclick="useHubCutter()">⬜<br>Hub Cutter</div>
+            <div class="bin" style="background:#d9534f" onclick="dispose('red')">🟥<br>Red Bin</div>
+            <div class="bin" style="background:#f0ad4e" onclick="dispose('yellow')">🟨<br>Yellow Bin</div>
+            <div class="bin" style="background:#0275d8" onclick="dispose('blue')">🟦<br>Blue Bin</div>
+        </div>
+
+        <div id="waste-feedback" class="feedback"></div>
+    </div>
+
+    <div id="screen-result" class="screen" style="text-align: center;">
+        <h1>Simulation Complete</h1>
+        <h2>Total Score: <span id="final-score">0</span></h2>
+        <p>You have completed the rotation for this patient.</p>
+        <button class="btn btn-blue" onclick="initGame()">🔄 Treat Next Patient (Random Age)</button>
+    </div>
+
+</div>
+
+</body>
+</html>
